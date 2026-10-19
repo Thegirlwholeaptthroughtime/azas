@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Records —Index</title>
+  <!-- Supabase 자바스크립트 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* =========================================================
+       미니멀 인덱스 스타일
+       ========================================================= */
+    :root {
+      --bg: #ffffff;
+      --text: #111111;
+      --sub: #9a9a9a;
+      --line: #e6e6e6;
+      --fs: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0e0e0e; --text: #eaeaea; --sub: #6d6d6d; --line: #262626; }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); color: var(--text); }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      font-size: var(--fs);
+      line-height: 1.35;
+      letter-spacing: -0.01em;
+      -webkit-font-smoothing: antialiased;
+      padding: 20px 24px 120px;
+    }
+    a, button {
+      color: inherit; font: inherit; text-decoration: none;
+      background: none; border: none; cursor: pointer; letter-spacing: inherit;
+    }
+    ul { list-style: none; }
+
+    /* 로그인한 주인에게만 보이는 요소 */
+    .owner-only { display: none !important; }
+    body.authed .owner-only { display: revert !important; }
+
+    /* ===== 상단 헤더 ===== */
+    header {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      align-items: start;
+      margin-bottom: 64px;
+    }
+    nav { display: flex; gap: 4px; }
+    nav button { color: var(--sub); }
+    nav button.on, nav button:hover { color: var(--text); }
+    .right { text-align: right; }
+
+    /* ===== 필터 ===== */
+    .filters-toggle { color: var(--text); margin-bottom: 8px; }
+    .filters { display: none; gap: 0 16px; margin-bottom: 24px; }
+    .filters.open { display: flex; }
+    .filters button { color: var(--sub); }
+    .filters button.on, .filters button:hover { color: var(--text); }
+
+    /* ===== 작성 폼 / 로그인 폼 공통 ===== */
+    .panel { display: none; margin-bottom: 40px; max-width: 560px; }
+    .panel.open { display: block; }
+    .panel .types { display: flex; gap: 16px; margin-bottom: 16px; }
+    .panel .types button { color: var(--sub); }
+    .panel .types button.on { color: var(--text); }
+    .panel input, .panel textarea {
+      display: block; width: 100%;
+      border: none; border-bottom: 1px solid var(--line);
+      background: transparent; color: var(--text);
+      font: inherit; padding: 8px 0; margin-bottom: 4px;
+      outline: none; resize: none; border-radius: 0;
+    }
+    .panel input:focus, .panel textarea:focus { border-color: var(--text); }
+    .panel textarea { min-height: 72px; }
+    .panel .song-only { display: none; }
+    .panel.song .song-only { display: block; }
+    .panel .row { display: flex; gap: 16px; margin-top: 12px; }
+    .panel .muted { color: var(--sub); }
+    .panel .msg { color: var(--sub); margin-top: 8px; min-height: 1.35em; }
+
+    /* ===== 인덱스 목록 ===== */
+    .entry {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+      text-align: left;
+      padding: 1px 0;
+    }
+    .entry .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .entry .s { color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .entry .y { color: var(--sub); text-align: right; }
+
+    .list:hover .entry { opacity: 0.25; }
+    .list .entry:hover, .list li.open .entry { opacity: 1; }
+
+    .detail { display: none; padding: 16px 0 28px; max-width: 560px; }
+    li.open .detail { display: block; }
+    .detail p { white-space: pre-wrap; word-break: break-word; margin-bottom: 12px; }
+    .detail .link { text-decoration: underline; text-underline-offset: 2px; }
+    .detail .acts { display: flex; gap: 16px; margin-top: 12px; color: var(--sub); }
+    .detail .acts button:hover { color: var(--text); }
+
+    .empty { color: var(--sub); }
+
+    /* ===== 마우스 따라다니는 미리보기 ===== */
+    #preview {
+      position: fixed; pointer-events: none; z-index: 10;
+      width: 320px; aspect-ratio: 16 / 9; overflow: hidden;
+      background: #000 center / cover no-repeat;
+      opacity: 0; transition: opacity .15s;
+    }
+    #preview.show { opacity: 1; }
+    #preview iframe {
+      position: absolute; left: 50%; top: 50%;
+      width: 120%; height: 120%; transform: translate(-50%, -50%);
+      border: 0;
+    }
+
+    /* ===== 펼친 상세의 플레이어 ===== */
+    .player { width: 100%; aspect-ratio: 16 / 9; margin-bottom: 12px; background: #000; }
+    .player iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .player .fallback { position: relative; display: block; width: 100%; height: 100%; }
+    .player .fallback img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .player .fallback span {
+      position: absolute; left: 12px; bottom: 10px;
+      color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6);
+    }
+
+    /* ===== 하단 ===== */
+    footer {
+      position: fixed; left: 24px; right: 24px; bottom: 20px;
+      display: flex; justify-content: space-between; color: var(--sub);
+      background: var(--bg);
+    }
+    footer button { color: var(--sub); }
+    footer button:hover { color: var(--text); }
+
+    @media (max-width: 640px) {
+      body { padding: 16px 16px 100px; }
+      header { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 40px; }
+      header .right { grid-column: 1 / -1; text-align: left; }
+      .entry { grid-template-columns: 1fr auto; }
+      .entry .s { display: none; }
+      #preview { display: none; }
+      footer { left: 16px; right: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>Records</div>
+    <nav>
+      <button class="on" data-view="index">Index<span class="owner-only">,</span></button>
+      <button class="owner-only" data-view="new">New +</button>
+    </nav>
+    <div class="right" id="count"></div>
+  </header>
+
+  <!-- 로그인 폼 (주인 전용) -->
+  <section class="panel" id="loginPanel">
+    <input id="email" type="email" placeholder="Email" autocomplete="username" />
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+    <div class="row">
+      <button id="loginBtn">Log in →</button>
+      <button class="muted" id="loginCancel">Cancel</button>
+    </div>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <!-- 작성/수정 폼 -->
+  <section class="panel" id="composer">
+    <div class="types">
+      <button class="on" data-type="memo">Note</button>
+      <button data-type="song">Song</button>
+    </div>
+    <input class="song-only" id="title" placeholder="Title" />
+    <input class="song-only" id="artist" placeholder="Artist" />
+    <input class="song-only" id="url" placeholder="YouTube link" />
+    <textarea id="content" placeholder="Write anything"></textarea>
+    <div class="row">
+      <button id="saveBtn">Post →</button>
+      <button class="muted" id="cancelBtn">Cancel</button>
+    </div>
+  </section>
+
+  <!-- 필터 -->
+  <button class="filters-toggle" id="filtersToggle">Filters +</button>
+  <div class="filters" id="filters">
+    <button class="on" data-filter="all">All</button>
+    <button data-filter="memo">Notes</button>
+    <button data-filter="song">Songs</button>
+  </div>
+
+  <!-- 목록 -->
+  <ul class="list" id="list"><li class="empty">Loading…</li></ul>
+
+  <div id="preview"></div>
+
+  <footer>
+    <span>Records © <span id="year"></span></span>
+    <span>Busan, Korea · <button id="authBtn">Log in</button></span>
+  </footer>
+
+  <script>
+    // =========================================================
+    //  0. Supabase 연결
+    //  anon 키는 공개용이라 코드에 넣어도 됨.
+    //  (실제 보안은 Supabase의 RLS 정책이 담당: 읽기는 누구나, 쓰기는 로그인한 본인만)
+    // =========================================================
+    const SUPABASE_URL = "https://myugshgxduqgplwlntwm.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15dWdzaGd4ZHVxZ3Bsd2xudHdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNzM1NDYsImV4cCI6MjEwNzk0OTU0Nn0.10tMf1pMiu69sGra60hOr9wYR2A2EOsKW9G6Cdri42M";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // =========================================================
+    //  1~2. CRUD — 이제 localStorage 대신 DB의 posts 테이블 사용
+    //  (DB 작업은 네트워크를 타기 때문에 전부 async/await)
+    // =========================================================
+
+    // DB 컬럼(created_at) → 화면에서 쓰는 이름(createdAt)으로 변환
+    const fromRow = r => ({ ...r, createdAt: r.created_at, updatedAt: r.updated_at });
+
+    // R - Read
+    async function fetchPosts() {
+      const { data, error } = await db.from("posts").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data.map(fromRow);
+    }
+    // C - Create
+    async function createPost(data) {
+      const { error } = await db.from("posts").insert(data);
+      if (error) throw error;
+    }
+    // U - Update
+    async function updatePost(id, data) {
+      const { error } = await db.from("posts")
+        .update({ ...data, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    }
+    // D - Delete
+    async function deletePost(id) {
+      const { error } = await db.from("posts").delete().eq("id", id);
+      if (error) throw error;
+    }
+
+    // =========================================================
+    //  3. 상태
+    // =========================================================
+    let posts = [];             // DB에서 받아온 글 (화면용 캐시)
+    let user = null;            // 로그인한 사용자 (없으면 방문자)
+    let currentType = "memo";
+    let currentFilter = "all";
+    let editingId = null;
+    let openId = null;
+    const $ = id => document.getElementById(id);
+
+    async function reload() {
+      try {
+        posts = await fetchPosts();
+      } catch (e) {
+        console.error(e);
+        $("list").innerHTML = `<li class="empty">Couldn't load. (${esc(e.message)})</li>`;
+        return;
+      }
+      render();
+    }
+
+    // =========================================================
+    //  4. 유틸
+    // =========================================================
+    function esc(s = "") {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function ytId(url = "") {
+      const m = url.match(/(?:youtu\.be\/|v=|shorts\/)([\w-]{11})/);
+      return m ? m[1] : null;
+    }
+    function ytUrlIn(text = "") {
+      const m = text.match(/https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\/\S+/);
+      return m ? m[0] : "";
+    }
+
+    // 유튜브 플레이어 API (퍼가기 막힌 영상 감지용)
+    const ytReady = new Promise(res => (window.onYouTubeIframeAPIReady = res));
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+
+    function mountYT(el, id, vars, onFail) {
+      ytReady.then(() => {
+        if (!el.isConnected) return;
+        new YT.Player(el, {
+          videoId: id,
+          playerVars: { ...vars, origin: location.origin },
+          events: { onError: onFail },
+        });
+      });
+    }
+    function fmtDate(iso) {
+      const d = new Date(iso);
+      return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
+    }
+    function rowTitle(p) {
+      if (p.type === "song") return p.title || "Untitled";
+      return (p.content || "").split("\n")[0] || "Untitled";
+    }
+    function rowSub(p) {
+      return p.type === "song" ? (p.artist || "Song") : "Note";
+    }
+
+    // =========================================================
+    //  5. 렌더링
+    // =========================================================
+    function render() {
+      const list = currentFilter === "all" ? posts : posts.filter(p => p.type === currentFilter);
+      $("count").textContent = `${list.length} entries`;
+
+      if (!list.length) {
+        $("list").innerHTML = `<li class="empty">Nothing yet.</li>`;
+        return;
+      }
+
+      $("list").innerHTML = list.map(p => {
+        const link = p.type === "song" ? (p.url || ytUrlIn(p.content)) : "";
+        const vid = link ? ytId(link) : null;
+        const isOpen = p.id === openId;
+        const body = p.type === "memo"
+          ? (p.content || "").split("\n").slice(1).join("\n").trim()
+          : (p.content || "").replace(link, "").trim();
+        return `
+          <li class="${isOpen ? "open" : ""}">
+            <button class="entry" data-id="${p.id}" data-yt="${vid || ""}">
+              <span class="t">${esc(rowTitle(p))}</span>
+              <span class="s">${esc(rowSub(p))}</span>
+              <span class="y">${fmtDate(p.createdAt)}</span>
+            </button>
+            <div class="detail">
+              ${isOpen && vid ? `<div class="player"><div data-mount="${vid}" data-link="${esc(link)}"></div></div>` : ""}
+              ${body ? `<p>${esc(body)}</p>` : ""}
+              ${link ? `<a class="link" href="${esc(link)}" target="_blank" rel="noopener">Listen ↗</a>` : ""}
+              <div class="acts">
+                ${user ? `<button data-edit="${p.id}">Edit</button><button data-del="${p.id}">Delete</button>` : ""}
+                ${p.updatedAt ? `<span>Edited ${fmtDate(p.updatedAt)}</span>` : ""}
+              </div>
+            </div>
+          </li>`;
+      }).join("");
+
+      const m = document.querySelector("[data-mount]");
+      if (m) {
+        const id = m.dataset.mount, link = m.dataset.link, box = m.parentElement;
+        mountYT(m, id, { autoplay: 1, playsinline: 1, rel: 0 }, () => {
+          box.innerHTML = `
+            <a class="fallback" href="${esc(link)}" target="_blank" rel="noopener">
+              <img src="https://img.youtube.com/vi/${id}/hqdefault.jpg" alt="">
+              <span>Watch on YouTube ↗</span>
+            </a>`;
+        });
+      }
+    }
+
+    // =========================================================
+    //  6. 로그인 (주인만)
+    // =========================================================
+    function setUser(u) {
+      user = u;
+      document.body.classList.toggle("authed", !!u);
+      $("authBtn").textContent = u ? "Log out" : "Log in";
+      if (!u) resetForm();
+      render();
+    }
+
+    $("authBtn").addEventListener("click", async () => {
+      if (user) {
+        await db.auth.signOut();
+      } else {
+        $("loginPanel").classList.add("open");
+        $("email").focus();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+
+    async function handleLogin() {
+      $("loginMsg").textContent = "";
+      const { error } = await db.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("password").value,
+      });
+      if (error) { $("loginMsg").textContent = "Login failed."; return; }
+      $("password").value = "";
+      $("loginPanel").classList.remove("open");
+    }
+    $("loginBtn").addEventListener("click", handleLogin);
+    $("password").addEventListener("keydown", e => { if (e.key === "Enter") handleLogin(); });
+    $("loginCancel").addEventListener("click", () => $("loginPanel").classList.remove("open"));
+
+    // 로그인/로그아웃이 일어나면 자동으로 화면 갱신 (새로고침해도 로그인 유지됨)
+    db.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
+
+    // =========================================================
+    //  7. 작성 폼
+    // =========================================================
+    function openComposer(open) {
+      $("composer").classList.toggle("open", open);
+      document.querySelectorAll("nav button").forEach(b =>
+        b.classList.toggle("on", (b.dataset.view === "new") === open));
+      if (open) $(currentType === "song" ? "title" : "content").focus();
+    }
+    function setType(type) {
+      currentType = type;
+      $("composer").classList.toggle("song", type === "song");
+      document.querySelectorAll(".types button").forEach(b => b.classList.toggle("on", b.dataset.type === type));
+    }
+    function resetForm() {
+      ["title","artist","url","content"].forEach(id => $(id).value = "");
+      editingId = null;
+      $("saveBtn").textContent = "Post →";
+      openComposer(false);
+    }
+    async function handleSave() {
+      const data = {
+        type: currentType,
+        content: $("content").value.trim(),
+        title: $("title").value.trim(),
+        artist: $("artist").value.trim(),
+        url: $("url").value.trim(),
+      };
+      if (data.type === "song" && !data.url) {
+        const u = ytUrlIn(data.content);
+        if (u) { data.url = u; data.content = data.content.replace(u, "").trim(); }
+      }
+      if (data.type === "memo" && !data.content) return $("content").focus();
+      if (data.type === "song" && !data.title) return $("title").focus();
+
+      const btn = $("saveBtn");
+      btn.disabled = true;
+      try {
+        editingId ? await updatePost(editingId, data) : await createPost(data);
+        resetForm();
+        await reload();
+      } catch (e) {
+        alert("Save failed: " + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function startEdit(id) {
+      const p = posts.find(x => x.id === id);
+      if (!p) return;
+      editingId = id;
+      setType(p.type);
+      ["title","artist","url","content"].forEach(k => $(k).value = p[k] || "");
+      $("saveBtn").textContent = "Save →";
+      openComposer(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    // =========================================================
+    //  8. 이벤트
+    // =========================================================
+    document.querySelectorAll("nav button").forEach(b =>
+      b.addEventListener("click", () => {
+        if (b.dataset.view === "new") openComposer(!$("composer").classList.contains("open"));
+        else resetForm();
+      }));
+
+    document.querySelectorAll(".types button").forEach(b =>
+      b.addEventListener("click", () => setType(b.dataset.type)));
+
+    $("filtersToggle").addEventListener("click", () => {
+      const open = $("filters").classList.toggle("open");
+      $("filtersToggle").textContent = open ? "Filters −" : "Filters +";
+    });
+    document.querySelectorAll(".filters button").forEach(b =>
+      b.addEventListener("click", () => {
+        currentFilter = b.dataset.filter;
+        document.querySelectorAll(".filters button").forEach(x => x.classList.toggle("on", x === b));
+        render();
+      }));
+
+    $("saveBtn").addEventListener("click", handleSave);
+    $("cancelBtn").addEventListener("click", resetForm);
+
+    $("list").addEventListener("click", async e => {
+      const entry = e.target.closest(".entry");
+      const edit = e.target.closest("[data-edit]");
+      const del = e.target.closest("[data-del]");
+      if (entry) { openId = openId === entry.dataset.id ? null : entry.dataset.id; render(); }
+      if (edit) startEdit(edit.dataset.edit);
+      if (del && confirm("Delete this entry?")) {
+        try {
+          await deletePost(del.dataset.del);
+          if (editingId === del.dataset.del) resetForm();
+          await reload();
+        } catch (err) {
+          alert("Delete failed: " + err.message);
+        }
+      }
+    });
+
+    // 노래 줄 hover 미리보기
+    const preview = $("preview");
+    let previewId = null;
+
+    function showPreview(id) {
+      if (previewId === id) return;
+      previewId = id;
+      preview.style.backgroundImage = `url(https://img.youtube.com/vi/${id}/hqdefault.jpg)`;
+      preview.innerHTML = "<div></div>";
+      mountYT(preview.firstChild, id,
+        { autoplay: 1, mute: 1, controls: 0, loop: 1, playlist: id, playsinline: 1, rel: 0 },
+        () => { if (previewId === id) preview.innerHTML = ""; });
+    }
+    function hidePreview() {
+      preview.classList.remove("show");
+      preview.innerHTML = "";
+      previewId = null;
+    }
+    $("list").addEventListener("mousemove", e => {
+      const entry = e.target.closest(".entry");
+      const id = entry && entry.dataset.yt;
+      if (id && entry.dataset.id !== openId) {
+        showPreview(id);
+        const w = preview.offsetWidth, h = preview.offsetHeight;
+        const x = e.clientX + 16 + w > innerWidth ? e.clientX - 16 - w : e.clientX + 16;
+        const y = e.clientY + 16 + h > innerHeight ? e.clientY - 16 - h : e.clientY + 16;
+        preview.style.left = x + "px";
+        preview.style.top = y + "px";
+        preview.classList.add("show");
+      } else hidePreview();
+    });
+    $("list").addEventListener("mouseleave", hidePreview);
+    $("list").addEventListener("click", hidePreview);
+
+    // 시작
+    $("year").textContent = new Date().getFullYear();
+    reload();
+  </script>
+</body>
+</html>
